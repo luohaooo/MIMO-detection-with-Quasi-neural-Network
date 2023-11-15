@@ -3,7 +3,7 @@ import numpy as np
 
 def sphere_decoding_BER(H_hat, y_sequence, bits_sequence, maxL):
     
-    lib = ctypes.CDLL("./SD")
+    lib = ctypes.CDLL("./sphere_decoding/SD")
 
     true_sequence = ''.join(bits_sequence[i] for i in range(len(bits_sequence)))
     bits_length = len(true_sequence)

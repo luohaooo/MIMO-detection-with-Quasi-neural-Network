@@ -36,8 +36,9 @@ def generate_noise(SNR, Nr):
     return np.sqrt(1/(2*SNR))*(np.random.randn(Nr,1)+1j*np.random.randn(Nr,1))
 
 # generate training and tesing data
-def generate_data(Nr,Nt,SNR,length,H_channel):
+def generate_data(Nr,Nt,SNR_dB,length,H_channel):
     bits_sequence, x_sequence = generate_x_sequence(length, Nt)
+    SNR = 10.0**(SNR_dB/10.0)
     n_sequence = [generate_noise(SNR, Nr) for i in range(length)]
     y_sequence = [np.dot(H_channel, x_sequence[i].reshape(Nt,1)) + n_sequence[i] for i in range(length)]
     return bits_sequence, x_sequence, y_sequence
@@ -143,15 +144,13 @@ Nt = 2
 Nr = 4
 # generate channel
 H = np.sqrt(1/2)*(np.random.randn(Nr,Nt)+1j*np.random.randn(Nr,Nt))
-# noise
-SNR_dB = 10
-SNR = 10.0**(SNR_dB/10.0)
+
 
 for training_length in [4, 8, 16, 32, 64, 128, 256]:
     iter_num = 5
     BER_list = np.zeros(iter_num)
     for ii in range(iter_num):
-        bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,SNR,training_length,H)
+        bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,10,training_length,H)
         H_trained, BER_list[ii] = training_testing()
     mean_BER = np.mean(BER_list)
     print([training_length, mean_BER])
