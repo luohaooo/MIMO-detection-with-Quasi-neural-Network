@@ -123,7 +123,7 @@ def count_differences(str1, str2):
 def training():
     H_hat_vec = np.sqrt(1/2)*(np.random.randn(Nr*Nt*2))
 
-    out = minimize(calculate_cost_function, x0=H_hat_vec, method="COBYLA", options={'maxiter':100})
+    out = minimize(calculate_cost_function, x0=H_hat_vec, method="COBYLA", options={'maxiter':500})
 
     H_hat_vec = out.x
 
@@ -146,8 +146,8 @@ Nt = 2
 Nr = 4
 # generate channel
 
-iter_num = 3
-SNR_list = np.array([0, 5, 10, 15, 20])
+iter_num = 4
+SNR_list = np.array([0, 2, 4, 6, 8])
 
 SD_mean_performance = np.zeros(len(SNR_list))
 QNN_mean_performance = np.zeros(len(SNR_list))
@@ -166,10 +166,10 @@ for ii in range(len(SNR_list)):
         H = H_list[jj]
         # print(H)
         bits_sequence_testing, x_sequence_testing, y_sequence_testing = generate_data(Nr,Nt,SNR_dB,1024,H)
-        SD_performance[jj] = sphere_decoding_BER(H, y_sequence_testing, bits_sequence_testing, 0.1)
+        SD_performance[jj] = sphere_decoding_BER(H, y_sequence_testing, bits_sequence_testing, 1)
         print("SD: "+str(SD_performance[jj]))
 
-        bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,SNR_dB,128,H)
+        bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,SNR_dB,256,H)
         H_trained = training()
         QNN_performance[jj] = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
         print("QNN: "+str(QNN_performance[jj]))
@@ -179,6 +179,7 @@ for ii in range(len(SNR_list)):
 
 print(SD_mean_performance)
 print(QNN_mean_performance)
+
 
 fig = plt.figure()
 
@@ -195,7 +196,7 @@ ax1.grid()
 ax1.set_xticks(SNR_list)
 ax1.set_yscale("log")
 ax1.set_adjustable("datalim")
-ax1.set_ylim(1e-5, 0.5)
+ax1.set_ylim(1e-6, 0.5)
 ax1.set_ylabel("BER")
 ax1.set_xlabel("SNR(dB)")
 
