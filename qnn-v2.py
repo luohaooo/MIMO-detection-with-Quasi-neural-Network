@@ -1,10 +1,14 @@
+'''
+modify qnn-v1. 
+In layer 1, we consider the repeated calculation motivating simplification
+'''
+
 import numpy as np 
 import random
 from scipy.optimize import minimize
 from sphere_decoding.sphereDecodingUseC import sphere_decoding_BER
 import matplotlib.pyplot as plt
 from timeit import default_timer as time
-
 
 
 # generate transmit signal
@@ -53,68 +57,78 @@ def bits2signals(bits):
     # bits: input binary string with length of (4*Nt) 
     return np.array([qam16_modulation(bits[i:i+4]) for i in range(0, len(bits), 4)]).reshape(Nt,1)
 
-def calculate_layer1(H_hat, y):
-    dimension_layer1 = 2**(4*Nt)
-    output = {}
-    for index in range(dimension_layer1):
-        bits = str(bin(index)[2:].zfill(4*Nt))
-        s = bits2signals(bits)
-        error = y - np.dot(H_hat,s)
-        value =  np.exp(-np.square(np.linalg.norm(error)))
-        output[bits] = value
+def calculate_layer1(H_hat):
+    output = np.empty((Nt,16,Nr), dtype=np.complex128)
+    for ii in range(Nt):
+        h = H_hat[:,ii]
+        for jj in range(16):
+            s_j = qam16_modulation(str(bin(jj)[2:].zfill(4)))*h
+            output[ii][jj] = s_j
     return output
 
-def calculate_layer2(layer1_output):
-    sum_exp = [[0 for i in range(2)] for j in range(4*Nt)]
-    for bits in layer1_output:
-        value = layer1_output[bits]
-        for index in range(4*Nt):
-            sum_exp[index][eval(bits[index])] += value
-    output = {}
-    for index in range(4*Nt):
-        # llr = np.log(sum_exp[index][1]/sum_exp[index][0])
-        output[index] = (sum_exp[index][1])/(sum_exp[index][1]+sum_exp[index][0])
-    return output
-
-def calculate_cross_entropy(layer2_output, true_sequence):
-    dimension = len(true_sequence)
-    entropy = 0
+def calculate_layer2(output_layer1, y):
+    dimension = 2**(4*Nt)
+    output = np.empty(dimension)
     for index in range(dimension):
-        if true_sequence[index] == '1':
-            entropy += (-np.log(layer2_output[index]))
-    return entropy
+        s = np.zeros(Nr , dtype=np.complex128)
+        binary_index = str(bin(index)[2:].zfill(4*Nt))
+        for ii in range(Nt):
+            s += output_layer1[ii][int(binary_index[4*ii:4*ii+4], 2)]
+        error = y - s.reshape(Nr,1)
+        output[index] = np.exp(-np.square(np.linalg.norm(error)))
+    return output
 
-def calculate_square_error(layer2_output, true_sequence):
+def calculate_layer3(layer2_output):
+    sum_exp = np.zeros((4*Nt, 2))
+    for index, prob in enumerate(layer2_output):
+        bits = str(bin(index)[2:].zfill(4*Nt))
+        for ii in range(4*Nt):
+            sum_exp[ii][eval(bits[ii])] += prob
+    output = np.empty((4*Nt))
+    for ii in range(4*Nt):
+        output[ii] = sum_exp[ii][1]/(sum_exp[ii][1]+sum_exp[ii][0])
+    return output
+
+def calculate_square_error(layer3_output, true_sequence):
     dimension = len(true_sequence)
     loss = 0
     for index in range(dimension):
         if true_sequence[index] == '1':
-            loss += np.square(1-layer2_output[index])
+            loss += np.square(1-layer3_output[index])
         else:
-            loss += np.square(layer2_output[index])
+            loss += np.square(layer3_output[index])
     return loss
 
 def calculate_cost_function(H_hat_vec):
-    a = time()
+    # a = time()
     H_hat = H_hat_vec[0:Nr*Nt].reshape(Nr,Nt)+1j*H_hat_vec[Nr*Nt:2*Nr*Nt].reshape(Nr,Nt)
-    # H_hat = H_hat_vec
     total_loss = 0
     training_length = len(y_sequence)
     for ii in range(training_length):
-        layer1_output = calculate_layer1(H_hat, y_sequence[ii])
-        layer2_output = calculate_layer2(layer1_output)
+        output1 = calculate_layer1(H_hat)
+
+        output2 = calculate_layer2(output1, y_sequence[ii])
+
+        output3 = calculate_layer3(output2)
+
         true_sequence = ''.join(bits_sequence[ii*Nt+jj] for jj in range(Nt))
-        total_loss += calculate_square_error(layer2_output,true_sequence)
+
+        total_loss += calculate_square_error(output3, true_sequence)
+
     mean_loss = total_loss/training_length
-    print(time()-a)
+    # print(time()-a)
     return mean_loss
-        
+
 def detection(y, H_trained):
-    layer1_output = calculate_layer1(H_trained, y)
-    layer2_output = calculate_layer2(layer1_output)
+    output1 = calculate_layer1(H_trained)
+
+    output2 = calculate_layer2(output1, y)
+
+    output3 = calculate_layer3(output2) 
+
     detect_result = ''
-    for ii in range(len(layer2_output)):
-        if(layer2_output[ii]>0.5):
+    for ii in range(len(output3)):
+        if(output3[ii]>0.5):
             detect_result += '1'
         else:
             detect_result += '0'
@@ -127,7 +141,7 @@ def count_differences(str1, str2):
 def training():
     H_hat_vec = np.sqrt(1/2)*(np.random.randn(Nr*Nt*2))
 
-    out = minimize(calculate_cost_function, x0=H_hat_vec, method="COBYLA", options={'maxiter':300})
+    out = minimize(calculate_cost_function, x0=H_hat_vec, method="COBYLA", options={'maxiter':10})
 
     H_hat_vec = out.x
 
@@ -183,27 +197,3 @@ for ii in range(len(SNR_list)):
 
 print(SD_mean_performance)
 print(QNN_mean_performance)
-
-
-fig = plt.figure()
-
-ax1 = fig.add_subplot(111)
-
-lns1 = ax1.plot(SNR_list, SD_mean_performance, '-ro', linewidth=2.0, label="Sphere Decoding")
-lns2 = ax1.plot(SNR_list, QNN_mean_performance, '-bo', linewidth=2.0, label="QNN Decoding")
-
-lns = lns1+lns2
-labs = [l.get_label() for l in lns]
-ax1.legend(lns, labs, loc="lower left")
-ax1.grid()
-
-ax1.set_xticks(SNR_list)
-ax1.set_yscale("log")
-ax1.set_adjustable("datalim")
-ax1.set_ylim(1e-6, 0.5)
-ax1.set_ylabel("BER")
-ax1.set_xlabel("SNR(dB)")
-
-
-# plt.savefig('convergence.pdf',dpi=600, bbox_inches='tight')
-plt.show()
