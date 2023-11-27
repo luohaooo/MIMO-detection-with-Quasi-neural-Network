@@ -141,7 +141,7 @@ def count_differences(str1, str2):
 def training():
     H_hat_vec = np.sqrt(1/2)*(np.random.randn(Nr*Nt*2))
 
-    out = minimize(calculate_cost_function, x0=H_hat_vec, method="COBYLA", options={'maxiter':10})
+    out = minimize(calculate_cost_function, x0=H_hat_vec, method="COBYLA", options={'maxiter': 300})
 
     H_hat_vec = out.x
 
@@ -164,8 +164,8 @@ Nt = 2
 Nr = 4
 # generate channel
 
-iter_num = 1
-SNR_list = np.array([15])
+iter_num = 5
+SNR_list = np.array([0,2,4,6,8,10])
 
 SD_mean_performance = np.zeros(len(SNR_list))
 QNN_mean_performance = np.zeros(len(SNR_list))
@@ -184,11 +184,15 @@ for ii in range(len(SNR_list)):
         H = H_list[jj]
         # print(H)
         bits_sequence_testing, x_sequence_testing, y_sequence_testing = generate_data(Nr,Nt,SNR_dB,1024,H)
-        SD_performance[jj] = sphere_decoding_BER(H, y_sequence_testing, bits_sequence_testing, 1)
+        SD_performance[jj] = sphere_decoding_BER(H, y_sequence_testing, bits_sequence_testing, 0.1)
         print("SD: "+str(SD_performance[jj]))
 
-        bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,SNR_dB,128,H)
+        bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,SNR_dB,256,H)
+
+        a = time()
         H_trained = training()
+        print("time consuming: " + str(time()-a))
+
         QNN_performance[jj] = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
         print("QNN: "+str(QNN_performance[jj]))
 
@@ -197,3 +201,26 @@ for ii in range(len(SNR_list)):
 
 print(SD_mean_performance)
 print(QNN_mean_performance)
+
+fig = plt.figure()
+
+ax1 = fig.add_subplot(111)
+
+lns1 = ax1.plot(SNR_list, SD_mean_performance, '-ro', linewidth=2.0, label="Sphere Decoding")
+lns2 = ax1.plot(SNR_list, QNN_mean_performance, '-bo', linewidth=2.0, label="QNN Decoding")
+
+lns = lns1+lns2
+labs = [l.get_label() for l in lns]
+ax1.legend(lns, labs, loc="lower left")
+ax1.grid()
+
+ax1.set_xticks(SNR_list)
+ax1.set_yscale("log")
+ax1.set_adjustable("datalim")
+ax1.set_ylim(1e-6, 0.5)
+ax1.set_ylabel("BER")
+ax1.set_xlabel("SNR(dB)")
+
+
+# plt.savefig('convergence.pdf',dpi=600, bbox_inches='tight')
+plt.show()

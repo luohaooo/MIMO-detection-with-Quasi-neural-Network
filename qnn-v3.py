@@ -1,3 +1,6 @@
+'''
+Random sampling of branches 
+'''
 import numpy as np 
 import random
 from scipy.optimize import minimize
@@ -53,11 +56,33 @@ def bits2signals(bits):
     # bits: input binary string with length of (4*Nt) 
     return np.array([qam16_modulation(bits[i:i+4]) for i in range(0, len(bits), 4)]).reshape(Nt,1)
 
+
+def sensing_field_for_one_dimension(random_num):
+    num = int(random_num/2)
+    result = []
+    ls = random.sample(range(8),num)
+    for ii in range(num):
+        result.append(bin(ls[ii])[2:].zfill(4))
+        result.append(bin(15-ls[ii])[2:].zfill(4))
+    return result
+
+
+def sensing_field_for_high_dimension(Nt, random_num):
+    if Nt == 1:
+        return sensing_field_for_one_dimension(random_num)
+    else:
+        previous_sensing_field = sensing_field_for_high_dimension(Nt-1, random_num)
+        this_dimension_sensing_field =  sensing_field_for_one_dimension(random_num)
+        new_sensing_field = []
+        for ii in range(len(previous_sensing_field)):
+            for jj in range(random_num):
+                new_sensing_field.append(previous_sensing_field[ii]+this_dimension_sensing_field[jj])
+        return new_sensing_field
+
+
 def calculate_layer1(H_hat, y):
-    dimension_layer1 = 2**(4*Nt)
     output = {}
-    for index in range(dimension_layer1):
-        bits = str(bin(index)[2:].zfill(4*Nt))
+    for bits in sensing_field:
         s = bits2signals(bits)
         error = y - np.dot(H_hat,s)
         value =  np.exp(-np.square(np.linalg.norm(error)))
@@ -104,7 +129,8 @@ def calculate_cost_function(H_hat_vec):
         layer2_output = calculate_layer2(layer1_output)
         true_sequence = ''.join(bits_sequence[ii*Nt+jj] for jj in range(Nt))
         total_loss += calculate_square_error(layer2_output,true_sequence)
-    mean_loss = total_loss/training_length
+    mean_loss = total_loss/(training_length)
+
     print(mean_loss)
     return mean_loss
         
@@ -126,7 +152,7 @@ def count_differences(str1, str2):
 def training():
     H_hat_vec = np.sqrt(1/2)*(np.random.randn(Nr*Nt*2))
 
-    out = minimize(calculate_cost_function, x0=H_hat_vec, method="COBYLA", options={'maxiter':300})
+    out = minimize(calculate_cost_function, x0=H_hat_vec, method="COBYLA", options={'maxiter':1000,'catol':1e-3})
 
     H_hat_vec = out.x
 
@@ -147,6 +173,9 @@ def calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing):
 # generate training and tesing data
 Nt = 2
 Nr = 4
+
+sensing_field = sensing_field_for_high_dimension(Nt, 6)
+
 # generate channel
 
 iter_num = 1
