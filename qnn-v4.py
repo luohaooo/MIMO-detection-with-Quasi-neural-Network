@@ -1,3 +1,7 @@
+'''
+search by pruning
+'''
+
 import numpy as np 
 import random
 from scipy.optimize import minimize
