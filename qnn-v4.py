@@ -1,3 +1,7 @@
+'''
+search by pruning
+'''
+
 import numpy as np 
 import random
 from scipy.optimize import minimize
@@ -61,7 +65,8 @@ def calculate_layer1(H_hat, y):
         s = bits2signals(bits)
         error = y - np.dot(H_hat,s)
         value =  np.exp(-np.square(np.linalg.norm(error)))
-        output[bits] = value
+        if value > 1e-5:
+            output[bits] = value
     return output
 
 def calculate_layer2(layer1_output):
@@ -73,7 +78,7 @@ def calculate_layer2(layer1_output):
     output = {}
     for index in range(4*Nt):
         # llr = np.log(sum_exp[index][1]/sum_exp[index][0])
-        output[index] = (sum_exp[index][1])/(sum_exp[index][1]+sum_exp[index][0])
+        output[index] = (sum_exp[index][1]+1e-10)/(sum_exp[index][1]+sum_exp[index][0]+1e-10)
     return output
 
 def calculate_cross_entropy(layer2_output, true_sequence):
@@ -95,6 +100,7 @@ def calculate_square_error(layer2_output, true_sequence):
     return loss
 
 def calculate_cost_function(H_hat_vec):
+    a = time()
     H_hat = H_hat_vec[0:Nr*Nt].reshape(Nr,Nt)+1j*H_hat_vec[Nr*Nt:2*Nr*Nt].reshape(Nr,Nt)
     # H_hat = H_hat_vec
     total_loss = 0
@@ -105,7 +111,7 @@ def calculate_cost_function(H_hat_vec):
         true_sequence = ''.join(bits_sequence[ii*Nt+jj] for jj in range(Nt))
         total_loss += calculate_square_error(layer2_output,true_sequence)
     mean_loss = total_loss/training_length
-    print(mean_loss)
+    print(time()-a)
     return mean_loss
         
 def detection(y, H_trained):
