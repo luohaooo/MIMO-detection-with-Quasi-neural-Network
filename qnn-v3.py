@@ -131,7 +131,7 @@ def calculate_cost_function(H_hat_vec):
         total_loss += calculate_square_error(layer2_output,true_sequence)
     mean_loss = total_loss/(training_length)
 
-    print(mean_loss)
+    # print(mean_loss)
     return mean_loss
         
 def detection(y, H_trained):
@@ -152,7 +152,7 @@ def count_differences(str1, str2):
 def training():
     H_hat_vec = np.sqrt(1/2)*(np.random.randn(Nr*Nt*2))
 
-    out = minimize(calculate_cost_function, x0=H_hat_vec, method="COBYLA", options={'maxiter':1000,'catol':1e-3})
+    out = minimize(calculate_cost_function, x0=H_hat_vec, method="COBYLA", options={'maxiter':300,'catol':1e-3})
 
     H_hat_vec = out.x
 
@@ -174,15 +174,19 @@ def calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing):
 Nt = 2
 Nr = 4
 
-sensing_field = sensing_field_for_high_dimension(Nt, 6)
+
 
 # generate channel
 
-iter_num = 1
+iter_num = 5
 SNR_list = np.array([15])
 
 SD_mean_performance = np.zeros(len(SNR_list))
-QNN_mean_performance = np.zeros(len(SNR_list))
+QNN_mean_performance_2 = np.zeros(len(SNR_list))
+QNN_mean_performance_6 = np.zeros(len(SNR_list))
+QNN_mean_performance_10 = np.zeros(len(SNR_list))
+QNN_mean_performance_14 = np.zeros(len(SNR_list))
+QNN_mean_performance_16 = np.zeros(len(SNR_list))
 
 H_list = [np.sqrt(1/2)*(np.random.randn(Nr,Nt)+1j*np.random.randn(Nr,Nt)) for ii in range(iter_num)]
 
@@ -191,47 +195,59 @@ for ii in range(len(SNR_list)):
     print("SNR_dB: "+str(SNR_dB))
     
     SD_performance = np.zeros(iter_num)
-    QNN_performance = np.zeros(iter_num)
+    QNN_performance_2 = np.zeros(iter_num)
+    QNN_performance_6 = np.zeros(iter_num)
+    QNN_performance_10 = np.zeros(iter_num)
+    QNN_performance_14 = np.zeros(iter_num)
+    QNN_performance_16 = np.zeros(iter_num)
+
 
     for jj in range(iter_num):
-        # print("current iter num: " +str(jj))
+        print("current iter num: " +str(jj))
         H = H_list[jj]
         # print(H)
         bits_sequence_testing, x_sequence_testing, y_sequence_testing = generate_data(Nr,Nt,SNR_dB,1024,H)
-        SD_performance[jj] = sphere_decoding_BER(H, y_sequence_testing, bits_sequence_testing, 1)
+        SD_performance[jj] = sphere_decoding_BER(H, y_sequence_testing, bits_sequence_testing, 10)
         print("SD: "+str(SD_performance[jj]))
 
-        bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,SNR_dB,128,H)
-        H_trained = training()
-        QNN_performance[jj] = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
-        print("QNN: "+str(QNN_performance[jj]))
+        for sampling_num in [2,6,10,14,16]:
+            sensing_field = sensing_field_for_high_dimension(Nt, sampling_num)
+
+            bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,SNR_dB,128,H)
+            H_trained = training()
+            print("sampling_num: "+str(sampling_num))
+            if sampling_num == 2:
+                QNN_performance_2[jj] = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
+                print("QNN: "+str(QNN_performance_2[jj]))
+            if sampling_num == 6:
+                QNN_performance_6[jj] = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
+                print("QNN: "+str(QNN_performance_6[jj]))
+            if sampling_num == 10:
+                QNN_performance_10[jj] = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
+                print("QNN: "+str(QNN_performance_10[jj]))
+            if sampling_num == 14:
+                QNN_performance_14[jj] = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
+                print("QNN: "+str(QNN_performance_14[jj]))
+            if sampling_num == 16:
+                QNN_performance_16[jj] = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
+                print("QNN: "+str(QNN_performance_16[jj]))
+        
 
     SD_mean_performance[ii] = np.mean(SD_performance)
-    QNN_mean_performance[ii] = np.mean(QNN_performance)
+    QNN_mean_performance_2[ii] = np.mean(QNN_performance_2)
+    QNN_mean_performance_6[ii] = np.mean(QNN_performance_6)
+    QNN_mean_performance_10[ii] = np.mean(QNN_performance_10)
+    QNN_mean_performance_14[ii] = np.mean(QNN_performance_14)
+    QNN_mean_performance_16[ii] = np.mean(QNN_performance_16)
 
-print(SD_mean_performance)
-print(QNN_mean_performance)
-
-
-fig = plt.figure()
-
-ax1 = fig.add_subplot(111)
-
-lns1 = ax1.plot(SNR_list, SD_mean_performance, '-ro', linewidth=2.0, label="Sphere Decoding")
-lns2 = ax1.plot(SNR_list, QNN_mean_performance, '-bo', linewidth=2.0, label="QNN Decoding")
-
-lns = lns1+lns2
-labs = [l.get_label() for l in lns]
-ax1.legend(lns, labs, loc="lower left")
-ax1.grid()
-
-ax1.set_xticks(SNR_list)
-ax1.set_yscale("log")
-ax1.set_adjustable("datalim")
-ax1.set_ylim(1e-6, 0.5)
-ax1.set_ylabel("BER")
-ax1.set_xlabel("SNR(dB)")
+print("sd: "+str(SD_mean_performance))
+print("qnn_2: "+str(QNN_mean_performance_2))
+print("qnn_6: "+str(QNN_mean_performance_6))
+print("qnn_10: "+str(QNN_mean_performance_10))
+print("qnn_14: "+str(QNN_mean_performance_14))
+print("qnn_16: "+str(QNN_mean_performance_16))
 
 
-# plt.savefig('convergence.pdf',dpi=600, bbox_inches='tight')
-plt.show()
+
+
+

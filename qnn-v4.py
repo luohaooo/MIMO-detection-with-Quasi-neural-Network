@@ -1,6 +1,6 @@
 '''
-search by pruning
-'''
+Fixed sampling of branches 
+''' 
 
 import numpy as np 
 import random
@@ -8,7 +8,6 @@ from scipy.optimize import minimize
 from sphere_decoding.sphereDecodingUseC import sphere_decoding_BER
 import matplotlib.pyplot as plt
 from timeit import default_timer as time
-
 
 
 # generate transmit signal
@@ -45,6 +44,7 @@ def generate_x_sequence(length, Nt):
 def generate_noise(SNR, Nr):
     return np.sqrt(1/(2*SNR))*(np.random.randn(Nr,1)+1j*np.random.randn(Nr,1))
 
+
 # generate training and tesing data
 def generate_data(Nr,Nt,SNR_dB,length,H_channel):
     bits_sequence, x_sequence = generate_x_sequence(length, Nt)
@@ -57,16 +57,26 @@ def bits2signals(bits):
     # bits: input binary string with length of (4*Nt) 
     return np.array([qam16_modulation(bits[i:i+4]) for i in range(0, len(bits), 4)]).reshape(Nt,1)
 
+# define the symbol of interest
+def sensing_field_for_high_dimension(sensing_field_QAM, Nt):
+    if Nt == 1:
+        return sensing_field_QAM
+    else:
+        previous_sensing_field = sensing_field_for_high_dimension(sensing_field_QAM, Nt-1)
+        new_sensing_field = []
+        for ii in range(len(previous_sensing_field)):
+            for jj in range(len(sensing_field_QAM)):
+                new_sensing_field.append(previous_sensing_field[ii]+sensing_field_QAM[jj])
+        return new_sensing_field
+
+
 def calculate_layer1(H_hat, y):
-    dimension_layer1 = 2**(4*Nt)
     output = {}
-    for index in range(dimension_layer1):
-        bits = str(bin(index)[2:].zfill(4*Nt))
+    for bits in sensing_field:
         s = bits2signals(bits)
         error = y - np.dot(H_hat,s)
         value =  np.exp(-np.square(np.linalg.norm(error)))
-        if value > 1e-5:
-            output[bits] = value
+        output[bits] = value
     return output
 
 def calculate_layer2(layer1_output):
@@ -78,7 +88,7 @@ def calculate_layer2(layer1_output):
     output = {}
     for index in range(4*Nt):
         # llr = np.log(sum_exp[index][1]/sum_exp[index][0])
-        output[index] = (sum_exp[index][1]+1e-10)/(sum_exp[index][1]+sum_exp[index][0]+1e-10)
+        output[index] = (sum_exp[index][1])/(sum_exp[index][1]+sum_exp[index][0])
     return output
 
 def calculate_cross_entropy(layer2_output, true_sequence):
@@ -100,7 +110,6 @@ def calculate_square_error(layer2_output, true_sequence):
     return loss
 
 def calculate_cost_function(H_hat_vec):
-    a = time()
     H_hat = H_hat_vec[0:Nr*Nt].reshape(Nr,Nt)+1j*H_hat_vec[Nr*Nt:2*Nr*Nt].reshape(Nr,Nt)
     # H_hat = H_hat_vec
     total_loss = 0
@@ -110,8 +119,9 @@ def calculate_cost_function(H_hat_vec):
         layer2_output = calculate_layer2(layer1_output)
         true_sequence = ''.join(bits_sequence[ii*Nt+jj] for jj in range(Nt))
         total_loss += calculate_square_error(layer2_output,true_sequence)
-    mean_loss = total_loss/training_length
-    print(time()-a)
+    mean_loss = total_loss/(training_length)
+
+    print(mean_loss)
     return mean_loss
         
 def detection(y, H_trained):
@@ -132,7 +142,7 @@ def count_differences(str1, str2):
 def training():
     H_hat_vec = np.sqrt(1/2)*(np.random.randn(Nr*Nt*2))
 
-    out = minimize(calculate_cost_function, x0=H_hat_vec, method="COBYLA", options={'maxiter':300})
+    out = minimize(calculate_cost_function, x0=H_hat_vec, method="COBYLA", options={'maxiter':1000,'catol':1e-3})
 
     H_hat_vec = out.x
 
@@ -153,6 +163,9 @@ def calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing):
 # generate training and tesing data
 Nt = 2
 Nr = 4
+
+sensing_field = sensing_field_for_high_dimension(['0011','0111','1011','1111','1100','1000'],Nt)
+
 # generate channel
 
 iter_num = 1
@@ -178,7 +191,7 @@ for ii in range(len(SNR_list)):
         SD_performance[jj] = sphere_decoding_BER(H, y_sequence_testing, bits_sequence_testing, 1)
         print("SD: "+str(SD_performance[jj]))
 
-        bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,SNR_dB,128,H)
+        bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,SNR_dB,256,H)
         H_trained = training()
         QNN_performance[jj] = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
         print("QNN: "+str(QNN_performance[jj]))

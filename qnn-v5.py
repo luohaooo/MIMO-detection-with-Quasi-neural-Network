@@ -1,6 +1,6 @@
 '''
-Fixed sampling of branches 
-'''
+pruning (remaining branches with high probabilities)
+''' 
 
 import numpy as np 
 import random
@@ -8,7 +8,6 @@ from scipy.optimize import minimize
 from sphere_decoding.sphereDecodingUseC import sphere_decoding_BER
 import matplotlib.pyplot as plt
 from timeit import default_timer as time
-
 
 
 # generate transmit signal
@@ -59,26 +58,41 @@ def bits2signals(bits):
     return np.array([qam16_modulation(bits[i:i+4]) for i in range(0, len(bits), 4)]).reshape(Nt,1)
 
 # define the symbol of interest
-def sensing_field_for_high_dimension(sensing_field_QAM, Nt):
-    if Nt == 1:
-        return sensing_field_QAM
+def find_new_sensing_symbol(current_sensing_field):
+    x = generate_random_bit_sequence(4*Nt)
+    if x in current_sensing_field:
+        return find_new_sensing_symbol(current_sensing_field)
     else:
-        previous_sensing_field = sensing_field_for_high_dimension(sensing_field_QAM, Nt-1)
-        new_sensing_field = []
-        for ii in range(len(previous_sensing_field)):
-            for jj in range(len(sensing_field_QAM)):
-                new_sensing_field.append(previous_sensing_field[ii]+sensing_field_QAM[jj])
-        return new_sensing_field
+        return x
 
+def update_sensing_field(layer1_output, N, current_pilot_index):
+    sorted_dict = sorted(layer1_output.items(), key=lambda x:x[1])
+    for ii in range(N):
+        sensing_field_pilots[current_pilot_index].remove(sorted_dict[ii][0])
+    for ii in range(N):
+        sensing_field_pilots[current_pilot_index].append(find_new_sensing_symbol(sensing_field_pilots[current_pilot_index]))
 
-def calculate_layer1(H_hat, y):
+def calculate_layer1(H_hat, y, current_pilot_index):
     output = {}
-    for bits in sensing_field:
+    for bits in sensing_field_pilots[current_pilot_index]:
+        s = bits2signals(bits)
+        error = y - np.dot(H_hat,s)
+        value =  np.exp(-np.square(np.linalg.norm(error)))
+        output[bits] = value
+    update_sensing_field(output, sensing_field_update_size, current_pilot_index)
+    return output
+
+def calculate_layer1_for_test(H_hat, y):
+    dimension_layer1 = 2**(4*Nt)
+    output = {}
+    for index in range(dimension_layer1):
+        bits = str(bin(index)[2:].zfill(4*Nt))
         s = bits2signals(bits)
         error = y - np.dot(H_hat,s)
         value =  np.exp(-np.square(np.linalg.norm(error)))
         output[bits] = value
     return output
+
 
 def calculate_layer2(layer1_output):
     sum_exp = [[0 for i in range(2)] for j in range(4*Nt)]
@@ -116,7 +130,7 @@ def calculate_cost_function(H_hat_vec):
     total_loss = 0
     training_length = len(y_sequence)
     for ii in range(training_length):
-        layer1_output = calculate_layer1(H_hat, y_sequence[ii])
+        layer1_output = calculate_layer1(H_hat, y_sequence[ii], ii)
         layer2_output = calculate_layer2(layer1_output)
         true_sequence = ''.join(bits_sequence[ii*Nt+jj] for jj in range(Nt))
         total_loss += calculate_square_error(layer2_output,true_sequence)
@@ -126,7 +140,7 @@ def calculate_cost_function(H_hat_vec):
     return mean_loss
         
 def detection(y, H_trained):
-    layer1_output = calculate_layer1(H_trained, y)
+    layer1_output = calculate_layer1_for_test(H_trained, y)
     layer2_output = calculate_layer2(layer1_output)
     detect_result = ''
     for ii in range(len(layer2_output)):
@@ -143,7 +157,7 @@ def count_differences(str1, str2):
 def training():
     H_hat_vec = np.sqrt(1/2)*(np.random.randn(Nr*Nt*2))
 
-    out = minimize(calculate_cost_function, x0=H_hat_vec, method="COBYLA", options={'maxiter':1000,'catol':1e-3})
+    out = minimize(calculate_cost_function, x0=H_hat_vec, method="COBYLA", options={'maxiter':300,'catol':1e-3})
 
     H_hat_vec = out.x
 
@@ -165,12 +179,17 @@ def calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing):
 Nt = 2
 Nr = 4
 
-sensing_field = sensing_field_for_high_dimension(['0011','0111','1011','1111','1100','1000'],Nt)
+pilot_length = 256
+
+sensing_field_size = 16
+sensing_field_update_size = 4
+
+sensing_field_pilots = [[generate_random_bit_sequence(4*Nt) for jj in range(sensing_field_size)] for ii in range(pilot_length)]
 
 # generate channel
 
 iter_num = 1
-SNR_list = np.array([15])
+SNR_list = np.array([0,5,10,15,20,25])
 
 SD_mean_performance = np.zeros(len(SNR_list))
 QNN_mean_performance = np.zeros(len(SNR_list))
@@ -192,7 +211,7 @@ for ii in range(len(SNR_list)):
         SD_performance[jj] = sphere_decoding_BER(H, y_sequence_testing, bits_sequence_testing, 1)
         print("SD: "+str(SD_performance[jj]))
 
-        bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,SNR_dB,128,H)
+        bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,SNR_dB,pilot_length,H)
         H_trained = training()
         QNN_performance[jj] = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
         print("QNN: "+str(QNN_performance[jj]))

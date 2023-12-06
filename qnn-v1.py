@@ -149,8 +149,8 @@ Nt = 2
 Nr = 4
 # generate channel
 
-iter_num = 1
-SNR_list = np.array([15])
+iter_num = 10
+SNR_list = np.array([0,5,10,15,20,25])
 
 SD_mean_performance = np.zeros(len(SNR_list))
 QNN_mean_performance = np.zeros(len(SNR_list))
