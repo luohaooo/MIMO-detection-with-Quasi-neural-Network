@@ -132,16 +132,15 @@ def calculate_cost_function(H_hat):
 def training(max_iter):
     H_hat = np.sqrt(1/2)*(np.random.randn(Nr,Nt)+1j*np.random.randn(Nr,Nt))
     # H_hat = H
-    last_gradient = np.zeros((Nr,Nt),dtype=np.complex128)
+    momentum = np.zeros((Nr,Nt),dtype=np.complex128)
     for iter_num in range(max_iter):
-        if iter_num%20 == 0:
-            alpha = eval(input("更新步长："))
         # solve the gradient
         mean_loss, total_gradients = calculate_cost_function(H_hat)
-        print(mean_loss)
+        print("loss: "+str(mean_loss))
         # update H_hat
-        last_gradient = (1-beta)*total_gradients + beta*last_gradient
-        H_hat += alpha * last_gradient
+        momentum = (1-beta1)*total_gradients + beta1*momentum
+        print("momentum norm: "+str(np.log10(np.sum(np.square(np.abs(momentum))))))
+        H_hat += alpha * momentum
         # print(H_hat)
 
     return H_hat
@@ -203,7 +202,7 @@ iter_num = 1
 SNR_list = np.array([100])
 
 alpha = 1e-8
-beta = 0.1
+beta1 = 0.1 #momentum rate
 
 
 SD_mean_performance = np.zeros(len(SNR_list))
