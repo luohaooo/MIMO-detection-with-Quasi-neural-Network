@@ -1,5 +1,5 @@
 '''
-optimization by gradient descent and momentum
+optimization by gradient descent (GD) and adaptive momentum (Adam)
 '''
 
 import numpy as np 
@@ -133,16 +133,20 @@ def calculate_cost_function(H_hat):
 def training(max_iter):
     H_hat = np.sqrt(1/2)*(np.random.randn(Nr,Nt)+1j*np.random.randn(Nr,Nt))
     # H_hat = H
-    momentum = np.zeros((Nr,Nt),dtype=np.complex128)
+    m = np.zeros((Nr,Nt),dtype=np.complex128)
+    v = np.zeros((Nr,Nt))
+
     for iter_num in range(max_iter):
         # solve the gradient
-        mean_loss, total_gradients = calculate_cost_function(H_hat)
+        mean_loss, gradients = calculate_cost_function(H_hat)
         print("loss: "+str(mean_loss))
-        # update H_hat
-        momentum = (1-beta1)*total_gradients + beta1*momentum
-        # print(alpha * momentum)
-        # print("momentum norm: "+str(np.log10(np.sum(np.square(np.abs(momentum))))))
-        H_hat -= alpha * momentum
+        # Adaptive momentum to update H_hat
+        m = beta1*m + (1-beta1)*gradients # update biased first moment estimate
+        gradients_square = np.abs(gradients)**2 # elementwise square of gradients matrix
+        v = beta2*v + (1-beta2)*gradients_square # update biased second raw moment estimate
+        m_hat = m/(1-beta1**(iter_num+1)) # compute bias-corrected first moment estimate
+        v_hat = v/(1-beta2**(iter_num+1)) # compute bias-corrected second raw moment estimate
+        H_hat -= alpha * m_hat / (np.sqrt(v_hat)+episilon) # update H_hat
         # print(H_hat)
 
     return H_hat
@@ -184,7 +188,6 @@ def detection(y, H_trained):
 def count_differences(str1, str2):
     return sum(a != b for a, b in zip(str1, str2))
 
-
 def calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing):
     error = 0
     for ii in range(len(y_sequence_testing)):
@@ -203,8 +206,13 @@ Nr = 4
 iter_num = 1
 SNR_list = np.array([0])
 
-alpha = 0.01
-beta1 = 0.1 #momentum rate
+# Adam paras
+alpha = 0.1
+beta1 = 0.8 #momentum rate
+beta2 = 0.999
+episilon = 1e-8
+
+
 training_length = 50
 
 
