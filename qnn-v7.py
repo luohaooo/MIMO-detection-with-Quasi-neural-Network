@@ -207,14 +207,14 @@ iter_num = 1
 SNR_list = np.array([0])
 
 # Adam paras
-alpha = 0.1
-beta1 = 0.8 #momentum rate
+alpha = 0.2
+beta1 = 0.8 
 beta2 = 0.999
 episilon = 1e-8
 
 
 training_length = 50
-
+pilot_length = 64
 
 SD_mean_performance = np.zeros(len(SNR_list))
 QNN_mean_performance = np.zeros(len(SNR_list))
@@ -236,7 +236,7 @@ for ii in range(len(SNR_list)):
         SD_performance[jj] = sphere_decoding_BER(H, y_sequence_testing, bits_sequence_testing, 1)
         print("SD: "+str(SD_performance[jj]))
 
-        bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,SNR_dB,128,H)
+        bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,SNR_dB,pilot_length,H)
         H_trained = training(training_length)
 
         QNN_performance[jj] = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
