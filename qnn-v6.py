@@ -71,11 +71,12 @@ def calculate_layer1_training(H_hat, y):
     for index in range(dimension_layer1):
         bits = str(bin(index)[2:].zfill(4*Nt))
         s = bits2signals(bits)
-        s_conjugate_transpose = s.conj().T
+        # s_conjugate_transpose = s.conj().T
         error = y - np.dot(H_hat,s)
         value =  np.exp(-np.square(np.linalg.norm(error)))
         output[index] = value
-        gradients[index] = np.real(-2*np.dot(error, s_conjugate_transpose))+1j*np.imag(2*np.dot(s_conjugate_transpose, s)*H_hat)
+        gradient_component = np.dot(error, s.conj().T)
+        gradients[index] = -value*(-gradient_component)
     return output, gradients
 
 def layer2_matrix(n):
@@ -124,7 +125,7 @@ def calculate_cost_function(H_hat):
         # SGD
         # if np.random.rand() < 0.6:
         for jj in range(2**(4*Nt)):
-            total_gradients += layer2_gradients[jj]*layer1_gradients[jj]
+            total_gradients += (layer2_gradients[jj]*layer1_gradients[jj])
     mean_loss = total_loss/training_length
     return mean_loss, total_gradients
 
@@ -139,8 +140,9 @@ def training(max_iter):
         print("loss: "+str(mean_loss))
         # update H_hat
         momentum = (1-beta1)*total_gradients + beta1*momentum
-        print("momentum norm: "+str(np.log10(np.sum(np.square(np.abs(momentum))))))
-        H_hat += alpha * momentum
+        # print(alpha * momentum)
+        # print("momentum norm: "+str(np.log10(np.sum(np.square(np.abs(momentum))))))
+        H_hat -= alpha * momentum
         # print(H_hat)
 
     return H_hat
@@ -199,10 +201,11 @@ Nr = 4
 # generate channel
 
 iter_num = 1
-SNR_list = np.array([100])
+SNR_list = np.array([15])
 
-alpha = 1e-8
-beta1 = 0.1 #momentum rate
+alpha = 0.01
+beta1 = 0.2 #momentum rate
+training_length = 30
 
 
 SD_mean_performance = np.zeros(len(SNR_list))
@@ -220,14 +223,19 @@ for ii in range(len(SNR_list)):
     for jj in range(iter_num):
         # print("current iter num: " +str(jj))
         H = H_list[jj]
-        # print("真实信道")
-        # print(H)
+
         bits_sequence_testing, x_sequence_testing, y_sequence_testing = generate_data(Nr,Nt,SNR_dB,1024,H)
         SD_performance[jj] = sphere_decoding_BER(H, y_sequence_testing, bits_sequence_testing, 1)
         print("SD: "+str(SD_performance[jj]))
 
         bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,SNR_dB,128,H)
-        H_trained = training(500)
+        H_trained = training(training_length)
+
+        print("真实信道")
+        print(H)
+        print("训练出的信道")
+        print(H_trained)
+
         QNN_performance[jj] = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
         print("QNN: "+str(QNN_performance[jj]))
 
@@ -238,25 +246,25 @@ print(SD_mean_performance)
 print(QNN_mean_performance)
 
 
-fig = plt.figure()
+# fig = plt.figure()
 
-ax1 = fig.add_subplot(111)
+# ax1 = fig.add_subplot(111)
 
-lns1 = ax1.plot(SNR_list, SD_mean_performance, '-ro', linewidth=2.0, label="Sphere Decoding")
-lns2 = ax1.plot(SNR_list, QNN_mean_performance, '-bo', linewidth=2.0, label="QNN Decoding")
+# lns1 = ax1.plot(SNR_list, SD_mean_performance, '-ro', linewidth=2.0, label="Sphere Decoding")
+# lns2 = ax1.plot(SNR_list, QNN_mean_performance, '-bo', linewidth=2.0, label="QNN Decoding")
 
-lns = lns1+lns2
-labs = [l.get_label() for l in lns]
-ax1.legend(lns, labs, loc="lower left")
-ax1.grid()
+# lns = lns1+lns2
+# labs = [l.get_label() for l in lns]
+# ax1.legend(lns, labs, loc="lower left")
+# ax1.grid()
 
-ax1.set_xticks(SNR_list)
-ax1.set_yscale("log")
-ax1.set_adjustable("datalim")
-ax1.set_ylim(1e-6, 0.5)
-ax1.set_ylabel("BER")
-ax1.set_xlabel("SNR(dB)")
+# ax1.set_xticks(SNR_list)
+# ax1.set_yscale("log")
+# ax1.set_adjustable("datalim")
+# ax1.set_ylim(1e-6, 0.5)
+# ax1.set_ylabel("BER")
+# ax1.set_xlabel("SNR(dB)")
 
 
-# plt.savefig('convergence.pdf',dpi=600, bbox_inches='tight')
-plt.show()
+# # plt.savefig('convergence.pdf',dpi=600, bbox_inches='tight')
+# plt.show()
