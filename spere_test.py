@@ -51,11 +51,11 @@ def generate_data(Nr,Nt,SNR_dB,length,H_channel):
 
 
 # generate training and tesing data
-Nt = 2
-Nr = 4
+Nt = 5
+Nr = 5
 # generate channel
 
-iter_num = 100
+iter_num = 1
 SNR_list = np.array([0,5,10,15,20,25])
 
 SD_mean_performance_20 = np.zeros(len(SNR_list))
