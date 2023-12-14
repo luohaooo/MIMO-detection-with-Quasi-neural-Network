@@ -127,9 +127,9 @@ def calculate_cost_function(H_hat):
         layer2_output, layer2_gradients = calculate_layer2_training(layer1_output, true_sequence)
         total_loss += calculate_cross_entropy(layer2_output,true_sequence)
         # SGD
-        if np.random.rand() < 0.5:
-            for jj in range(2**(4*Nt)):
-                total_gradients += (layer2_gradients[jj]*layer1_gradients[jj])
+        # if np.random.rand() < 0.5:
+        for jj in range(2**(4*Nt)):
+            total_gradients += (layer2_gradients[jj]*layer1_gradients[jj])
     mean_loss = total_loss/training_length
     return mean_loss, total_gradients
 
@@ -215,13 +215,13 @@ iter_num = 30
 SNR_list = np.array([25])
 
 # Adam paras
-alpha = 0.2
+alpha = 0.001
 
 max_iter = 1000
 
-pilot_length = 64
+pilot_length = 1024
 
-beta1 = 0.2
+beta1 = 0
 
 SD_mean_performance = np.zeros(len(SNR_list))
 QNN_mean_performance_128 = np.zeros(len(SNR_list))

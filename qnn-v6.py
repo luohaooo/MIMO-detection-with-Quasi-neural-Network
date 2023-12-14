@@ -204,7 +204,7 @@ iter_num = 1
 SNR_list = np.array([0])
 
 alpha = 0.01
-beta1 = 0.2 #momentum rate
+beta1 = 0 #momentum rate
 training_length = 50
 pilot_length = 128
 
