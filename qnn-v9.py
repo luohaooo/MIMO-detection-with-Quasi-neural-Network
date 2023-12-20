@@ -1,6 +1,7 @@
 '''
 correct the way of generating data
 '''
+
 import numpy as np 
 import random
 from scipy.linalg import orth
@@ -19,12 +20,12 @@ channel_list = np.load("channel_list_4_2.npy")
 H_list = channel_list[0:iter_num]
 cov_list = np.load("covmatrix_list_4.npy")
 
-SNR_list = np.array([25])
+SNR_list = np.array([30])
 
 
-alpha = 0.1
+alpha = 1e-4
 
-max_iter = 1000
+max_iter = 100
 
 pilot_length = 128
 
@@ -109,18 +110,24 @@ def calculate_layer1_training(H_hat, y):
     output = np.empty(dimension_layer1)
     # calculate gradient components in layer1
     gradients = np.zeros((dimension_layer1, Nr, Nt), dtype=np.complex128)
+    gradient_component = np.zeros((dimension_layer1, Nr, Nt), dtype=np.complex128)
     for index in range(dimension_layer1):
         bits = str(bin(index)[2:].zfill(4*Nt))
         s = bits2signals(bits)
         # s_conjugate_transpose = s.conj().T
         error = y - np.dot(H_hat,s)
         error_norm[index] = np.square(np.linalg.norm(error))
-        value =  np.exp(-error_norm[index])
+        gradient_component[index] = np.dot(error, s.conj().T)
+
+    min_error_norm = np.min(error_norm)
+
+    for index in range(dimension_layer1):
+        value =  np.exp(-error_norm[index]+min_error_norm)
         output[index] = value
-        gradient_component = np.dot(error, s.conj().T)
-        gradients[index] = -value*(-gradient_component)
-    # print([np.max(error_norm),np.min(error_norm)])
+        gradients[index] = -value*(-gradient_component[index])
+    # print(output)
     return output, gradients
+
 
 def layer2_matrix(n):
     if n == 1:
@@ -144,7 +151,11 @@ def calculate_layer2_training(layer1_output, true_output):
     # calculate gradient components in layer2
     gradients = np.zeros(2**(4*Nt))
     # print(output)
+    epsilon = 1e-10  # 为了防止log(0)的情况，添加一个小的常数
+    output = np.clip(output, epsilon, 1. - epsilon)
     for ii in range(len(gradients)):
+        # gradient1 = true_output/output
+        # gradient2 = (np.ones(len(true_output))-true_output)/(np.ones(len(output))-output)
         for jj in range(4*Nt):
             gradient1 = true_output[jj]/output[jj]
             gradient2 = (1-true_output[jj])/(1-output[jj])
@@ -213,13 +224,20 @@ def calculate_layer1_testing(H_hat, y):
     dimension_layer1 = 2**(4*Nt)
     # layer1 output
     output = np.zeros(dimension_layer1)
+    error_norm = np.empty(dimension_layer1)
     for index in range(dimension_layer1):
         bits = str(bin(index)[2:].zfill(4*Nt))
         s = bits2signals(bits)
         error = y - np.dot(H_hat,s)
-        value =  np.exp(-np.square(np.linalg.norm(error)))
+        error_norm[index] = np.square(np.linalg.norm(error))
+
+    min_error_norm = np.min(error_norm)
+
+    for index in range(dimension_layer1):
+        value =  np.exp(-error_norm[index]+min_error_norm)
         output[index] = value
     return output
+
 
 def calculate_layer2_testing(layer1_output):
     total_prob = np.sum(layer1_output)
@@ -271,7 +289,7 @@ for ii in range(len(SNR_list)):
         SD_performance[jj] = sphere_decoding_BER(H, y_sequence_testing, bits_sequence_testing, 1)
         print("SD: "+str(SD_performance[jj]))
 
-        # H_w = np.copy(H)*np.sqrt(SNR)
+        H_w = np.copy(H)
 
         bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,pilot_length,H,cov)
         H_trained, loss = training(max_iter)
