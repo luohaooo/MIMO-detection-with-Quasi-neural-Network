@@ -1,11 +1,10 @@
 '''
-correct the way of generating data
+信道估计+白化
 '''
-
 import numpy as np 
 import random
 from scipy.linalg import orth
-from sphere_decoding.sphereDecodingUseC import sphere_decoding_BER
+from sphere_decoding.new_sphereDecodingUseC import sphere_decoding_BER
 import matplotlib.pyplot as plt
 # from timeit import default_timer as time
 
@@ -20,10 +19,10 @@ channel_list = np.load("channel_list_4_2.npy")
 H_list = channel_list[0:iter_num]
 cov_list = np.load("covmatrix_list_4.npy")
 
-SNR_list = np.array([0])
+SNR_list = np.array([20])
 
 
-alpha = 1e-2
+alpha = 1e-3
 
 max_iter = 100
 
@@ -66,7 +65,9 @@ def qam16_modulation(binary_input):
 def generate_x_sequence(length, Nt):
     total_bits_sequence = generate_random_bit_sequence(length*Nt*4)
     bits_sequence = [total_bits_sequence[i:i+4] for i in range(0, len(total_bits_sequence), 4)]
-    x_sequence = [np.array([qam16_modulation(bits_sequence[i+j]) for j in range(Nt)]) for i in range(0, len(bits_sequence), Nt)]
+    x_sequence = np.empty((Nt, length), dtype=np.complex128)
+    for ii in range(length):
+        x_sequence[:,ii] = [qam16_modulation(bits_sequence[ii*Nt+jj]) for jj in range(Nt)]
     return bits_sequence, x_sequence
 
 def generate_channel(SNR):
@@ -91,11 +92,17 @@ def generate_data(Nr,Nt,length,H_channel,cov_matrix):
     n_sequence = np.empty((length,Nr,1), dtype=np.complex128)
     for ii in range(length):
         n_sequence[ii] = generate_noise(cov_matrix,Nr)
-    y_sequence = np.empty((length,Nr,1), dtype=np.complex128)
+    y_sequence = np.empty((Nr, length), dtype=np.complex128)
     for ii in range(length):
-        s = np.dot(H_channel, x_sequence[ii].reshape(Nt,1))
-        y_sequence[ii] = s + n_sequence[ii]
+        s = np.dot(H_channel, x_sequence[:,ii].reshape(Nt,1))
+        y_sequence[:, ii] = (s + n_sequence[ii]).reshape(Nr)
     return bits_sequence, x_sequence, y_sequence
+
+def whiten_matrix(cov_matrix, H):
+    eigenvalues, eigenvectors = np.linalg.eig(cov_matrix)
+    diagmatrix = np.sqrt(np.diag(eigenvalues))
+    whitening_matrix = np.linalg.inv(np.dot(eigenvectors, diagmatrix))
+    return np.dot(whitening_matrix, H)
 
 # training H_hat
 
@@ -115,6 +122,7 @@ def calculate_layer1_training(H_hat, y):
         bits = str(bin(index)[2:].zfill(4*Nt))
         s = bits2signals(bits)
         # s_conjugate_transpose = s.conj().T
+        y = y.reshape(Nr, 1)
         error = y - np.dot(H_hat,s)
         error_norm[index] = np.square(np.linalg.norm(error))
         gradient_component[index] = np.dot(error, s.conj().T)
@@ -182,12 +190,12 @@ def calculate_cross_entropy(layer2_output, true_sequence):
 def calculate_cost_function(H_hat):
     total_loss = 0
     total_gradients = np.zeros((Nr,Nt), dtype=np.complex128)
-    training_length = len(y_sequence)
+    training_length = len(y_sequence[0])
     for ii in range(training_length):
         # print(ii)
         true_sequence = ''.join(bits_sequence[ii*Nt+jj] for jj in range(Nt))
         true_sequence = np.array([eval(ii) for ii in true_sequence])
-        layer1_output, layer1_gradients = calculate_layer1_training(H_hat, y_sequence[ii])
+        layer1_output, layer1_gradients = calculate_layer1_training(H_hat, y_sequence[:, ii])
         layer2_output, layer2_gradients = calculate_layer2_training(layer1_output, true_sequence)
         total_loss += calculate_cross_entropy(layer2_output,true_sequence)
         # SGD
@@ -201,7 +209,7 @@ def calculate_cost_function(H_hat):
 def training(max_iter):
     # H_hat = np.sqrt(1/2)*(np.random.randn(Nr,Nt)+1j*np.random.randn(Nr,Nt))
     H_hat = np.zeros((Nr,Nt), dtype=np.complex128)
-    # H_hat = np.copy(H_w)
+    # H_hat = np.copy(H_estimated)
     momentum = np.zeros((Nr,Nt),dtype=np.complex128)
     last_loss = -100
     mean_loss = -200
@@ -209,7 +217,7 @@ def training(max_iter):
         # solve the gradient
         mean_loss, total_gradients = calculate_cost_function(H_hat)
         print("loss: "+str(mean_loss))
-        if np.abs(last_loss-mean_loss) < 0.001:
+        if np.abs(last_loss-mean_loss) < 0.002:
             return H_hat, mean_loss
         else:
             last_loss = mean_loss
@@ -228,6 +236,7 @@ def calculate_layer1_testing(H_hat, y):
     for index in range(dimension_layer1):
         bits = str(bin(index)[2:].zfill(4*Nt))
         s = bits2signals(bits)
+        y = y.reshape(Nr,1)
         error = y - np.dot(H_hat,s)
         error_norm[index] = np.square(np.linalg.norm(error))
 
@@ -264,11 +273,11 @@ def count_differences(str1, str2):
 
 def calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing):
     error = 0
-    for ii in range(len(y_sequence_testing)):
-        detect_result = detection(y_sequence_testing[ii], H_trained)
+    for ii in range(len(y_sequence_testing[0])):
+        detect_result = detection(y_sequence_testing[:,ii], H_trained)
         true_sequence = ''.join(bits_sequence_testing[ii*Nt+jj] for jj in range(Nt))
         error += count_differences(detect_result, true_sequence)
-    BER = error/(len(y_sequence_testing)*len(detect_result))
+    BER = error/(len(y_sequence_testing[0])*len(detect_result))
     return BER
 
 for ii in range(len(SNR_list)):
@@ -283,18 +292,26 @@ for ii in range(len(SNR_list)):
         print("----------------------------current iter num: " +str(jj))
 
         H = H_list[jj] * np.sqrt(SNR)
+        # print("真实信道")
+        # print(H)
         cov = cov_list[0]
 
         bits_sequence_testing, x_sequence_testing, y_sequence_testing = generate_data(Nr,Nt,1024,H,cov)
-        SD_performance[jj] = sphere_decoding_BER(H, y_sequence_testing, bits_sequence_testing, 1)
+        bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,pilot_length,H,cov)
+        H_estimated = np.dot(y_sequence, np.linalg.pinv(x_sequence))
+        # print("估计信道")
+        # print(H_estimated)
+
+        SD_performance[jj] = sphere_decoding_BER(H_estimated, y_sequence_testing, bits_sequence_testing, 1)
         print("SD: "+str(SD_performance[jj]))
 
-        H_w = np.copy(H)
+        H_w = whiten_matrix(cov, H)
+        # print("白化信道")
+        # print(H_w)
 
-        bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,pilot_length,H,cov)
         H_trained, loss = training(max_iter)
-        
-        
+        # print("QNN信道")
+        # print(H_trained)
         BER = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
 
         # save_BER[ii][jj] = BER
