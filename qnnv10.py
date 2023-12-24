@@ -353,26 +353,32 @@ for ii in range(len(SNR_list)):
     QNN_mean_performance_128[ii] = np.mean(QNN_performance_128)
 
 
+import matplotlib.ticker as ticker
 fig = plt.figure()
 
 ax1 = fig.add_subplot(111)
 
-# lns1 = ax1.plot(SNR_list, SD_mean_performance, '-ro', linewidth=2.0, label="Sphere Decoding (perfect CSI)")
-lns2 = ax1.plot(SNR_list, SD_mean_performance_estimated, '-ro', linewidth=2.0, label="Sphere Decoding (estimated CSI)")
-lns3 = ax1.plot(SNR_list, QNN_mean_performance_128, '-bo', linewidth=2.0, label="QNN Decoding")
+lns1 = ax1.plot(SNR_list, SD_mean_performance_estimated, '-ro', linewidth=2.0, label="Max Log (estimated CSI)")
+lns2 = ax1.plot(SNR_list, QNN_mean_performance_128, '-bo', linewidth=2.0, label="QNN Decoding (128 pilot)")
 
-lns = lns2+lns3
+
+
+lns = lns1+lns2
 labs = [l.get_label() for l in lns]
 ax1.legend(lns, labs, loc="lower left")
-ax1.grid()
+
+ax1.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs='auto'))
+ax1.grid(which='major', linestyle='-', linewidth='0.5', color='black')
+ax1.grid(which='minor', linestyle=':', linewidth='0.5', color='gray')
 
 ax1.set_xticks(SNR_list)
 ax1.set_yscale("log")
 ax1.set_adjustable("datalim")
-ax1.set_ylim(1e-6, 0.5)
+ax1.set_xlim(-0.5,25.5)
+ax1.set_ylim(1e-5, 0.5)
 ax1.set_ylabel("BER")
 ax1.set_xlabel("SNR(dB)")
+plt.title("4*2 MIMO, cross entropy loss, gradient descent, 128 pilots")
 
-
-# plt.savefig('convergence.pdf',dpi=600, bbox_inches='tight')
+plt.savefig('BER.png',dpi=600, bbox_inches='tight')
 plt.show()
