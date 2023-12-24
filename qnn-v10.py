@@ -353,8 +353,9 @@ for ii in range(len(SNR_list)):
     QNN_mean_performance_128[ii] = np.mean(QNN_performance_128)
 
 
-import matplotlib.ticker as ticker
 fig = plt.figure()
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['font.sans-serif'] = ['Times New Roman']
 
 ax1 = fig.add_subplot(111)
 
@@ -367,18 +368,20 @@ lns = lns1+lns2
 labs = [l.get_label() for l in lns]
 ax1.legend(lns, labs, loc="lower left")
 
-ax1.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs='auto'))
-ax1.grid(which='major', linestyle='-', linewidth='0.5', color='black')
-ax1.grid(which='minor', linestyle=':', linewidth='0.5', color='gray')
+# ax1.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs='auto'))
+# ax1.grid(which='major', linestyle='-', linewidth='0.5', color='black')
+# ax1.grid(which='minor', linestyle=':', linewidth='0.5', color='gray')
+
+plt.grid(color='gray', linestyle='-', linewidth=0.5)
 
 ax1.set_xticks(SNR_list)
 ax1.set_yscale("log")
 ax1.set_adjustable("datalim")
-ax1.set_xlim(-0.5,25.5)
-ax1.set_ylim(1e-5, 0.5)
+ax1.set_xlim(-0.5,16.5)
+ax1.set_ylim(1e-4, 0.8)
 ax1.set_ylabel("BER")
 ax1.set_xlabel("SNR(dB)")
-plt.title("4*2 MIMO, cross entropy loss, gradient descent, 128 pilots")
+plt.title("covariance matrix = I")
 
-plt.savefig('BER.png',dpi=600, bbox_inches='tight')
+# plt.savefig('BER.png',dpi=600, bbox_inches='tight')
 plt.show()
