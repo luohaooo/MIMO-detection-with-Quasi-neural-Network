@@ -219,7 +219,7 @@ alpha = 0.001
 
 max_iter = 1000
 
-pilot_length = 1024
+pilot_length = 128
 
 beta1 = 0
 

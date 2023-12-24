@@ -19,10 +19,15 @@ channel_list = np.load("channel_list_4_2.npy")
 H_list = channel_list[0:iter_num]
 cov_list = np.load("covmatrix_list_4.npy")
 
-SNR_list = np.array([20])
+SNR_list = np.array([0,4,8,12,16])
 
 
-alpha = 1e-3
+alpha = 0.05
+
+# Adam
+# beta1 = 0.8 
+# beta2 = 0.999
+# episilon = 1e-8
 
 max_iter = 100
 
@@ -31,6 +36,7 @@ pilot_length = 128
 beta1 = 0
 
 SD_mean_performance = np.zeros(len(SNR_list))
+SD_mean_performance_estimated = np.zeros(len(SNR_list))
 QNN_mean_performance_128 = np.zeros(len(SNR_list))
 
 save_loss = np.empty((len(SNR_list), iter_num))
@@ -207,25 +213,38 @@ def calculate_cost_function(H_hat):
 
 
 def training(max_iter):
-    # H_hat = np.sqrt(1/2)*(np.random.randn(Nr,Nt)+1j*np.random.randn(Nr,Nt))
-    H_hat = np.zeros((Nr,Nt), dtype=np.complex128)
+    H_hat = np.sqrt(1/2)*(np.random.randn(Nr,Nt)+1j*np.random.randn(Nr,Nt))
+    # H_hat = np.zeros((Nr,Nt), dtype=np.complex128)
     # H_hat = np.copy(H_estimated)
     momentum = np.zeros((Nr,Nt),dtype=np.complex128)
     last_loss = -100
     mean_loss = -200
+    m = np.zeros((Nr,Nt),dtype=np.complex128)
+    v = np.zeros((Nr,Nt))
     for iter_num in range(max_iter):
         # solve the gradient
         mean_loss, total_gradients = calculate_cost_function(H_hat)
         print("loss: "+str(mean_loss))
-        if np.abs(last_loss-mean_loss) < 0.002:
+        if np.abs(last_loss-mean_loss) < 1e-4:
             return H_hat, mean_loss
         else:
             last_loss = mean_loss
+
         # update H_hat
         momentum = (1-beta1)*total_gradients + beta1*momentum
         H_hat -= alpha * momentum
+
+        # Adaptive momentum to update H_hat
+        # m = beta1*m + (1-beta1)*total_gradients # update biased first moment estimate
+        # gradients_square = np.abs(total_gradients)**2 # elementwise square of gradients matrix
+        # v = beta2*v + (1-beta2)*gradients_square # update biased second raw moment estimate
+        # m_hat = m/(1-beta1**(iter_num+1)) # compute bias-corrected first moment estimate
+        # v_hat = v/(1-beta2**(iter_num+1)) # compute bias-corrected second raw moment estimate
+        # print("v:"+str(np.sqrt(v_hat)))
+        # H_hat -= alpha * m_hat / (np.sqrt(v_hat)+episilon) # update H_hat
         # print(H_hat)
     return H_hat, mean_loss
+
 
 # testing QNN for detection
 def calculate_layer1_testing(H_hat, y):
@@ -285,6 +304,7 @@ for ii in range(len(SNR_list)):
     SNR = 10**(SNR_dB / 10)
     
     SD_performance = np.zeros(iter_num)
+    SD_performance_estimated = np.zeros(iter_num)
     QNN_performance_128 = np.zeros(iter_num)
 
     for jj in range(iter_num):
@@ -292,9 +312,8 @@ for ii in range(len(SNR_list)):
         print("----------------------------current iter num: " +str(jj))
 
         H = H_list[jj] * np.sqrt(SNR)
-        # print("真实信道")
-        # print(H)
         cov = cov_list[0]
+        # cov = np.eye(Nr)
 
         bits_sequence_testing, x_sequence_testing, y_sequence_testing = generate_data(Nr,Nt,1024,H,cov)
         bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,pilot_length,H,cov)
@@ -302,22 +321,58 @@ for ii in range(len(SNR_list)):
         # print("估计信道")
         # print(H_estimated)
 
-        SD_performance[jj] = sphere_decoding_BER(H_estimated, y_sequence_testing, bits_sequence_testing, 1)
-        print("SD: "+str(SD_performance[jj]))
+        # SD_performance[jj] = sphere_decoding_BER(H, y_sequence_testing, bits_sequence_testing, 1)
+        # print("SD (perfect CSI): "+str(SD_performance[jj]))
+
+
+        SD_performance_estimated[jj] = sphere_decoding_BER(H_estimated, y_sequence_testing, bits_sequence_testing, 100000)
+        print("SD (estimated CSI): "+str(SD_performance_estimated[jj]))
 
         H_w = whiten_matrix(cov, H)
         # print("白化信道")
         # print(H_w)
 
         H_trained, loss = training(max_iter)
+        BER = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
+
+        # print("真实信道")
+        # print(H)
         # print("QNN信道")
         # print(H_trained)
-        BER = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
+        # print("白化信道")
+        # print(H_w)
+        
 
         # save_BER[ii][jj] = BER
 
         QNN_performance_128[jj] = BER
         print("QNN: "+str(BER))
 
-    SD_mean_performance[ii] = np.mean(SD_performance)
+    # SD_mean_performance[ii] = np.mean(SD_performance)
+    SD_mean_performance_estimated[ii] = np.mean(SD_performance_estimated)
     QNN_mean_performance_128[ii] = np.mean(QNN_performance_128)
+
+
+fig = plt.figure()
+
+ax1 = fig.add_subplot(111)
+
+# lns1 = ax1.plot(SNR_list, SD_mean_performance, '-ro', linewidth=2.0, label="Sphere Decoding (perfect CSI)")
+lns2 = ax1.plot(SNR_list, SD_mean_performance_estimated, '-ro', linewidth=2.0, label="Sphere Decoding (estimated CSI)")
+lns3 = ax1.plot(SNR_list, QNN_mean_performance_128, '-bo', linewidth=2.0, label="QNN Decoding")
+
+lns = lns2+lns3
+labs = [l.get_label() for l in lns]
+ax1.legend(lns, labs, loc="lower left")
+ax1.grid()
+
+ax1.set_xticks(SNR_list)
+ax1.set_yscale("log")
+ax1.set_adjustable("datalim")
+ax1.set_ylim(1e-6, 0.5)
+ax1.set_ylabel("BER")
+ax1.set_xlabel("SNR(dB)")
+
+
+# plt.savefig('convergence.pdf',dpi=600, bbox_inches='tight')
+plt.show()
