@@ -19,10 +19,8 @@ channel_list = np.load("channel_list_4_2.npy")
 H_list = channel_list[0:iter_num]
 cov_list = np.load("covmatrix_list_4.npy")
 
-SNR_list = np.array([0,4,8,12,16])
+SNR_list = np.array([10])
 
-
-alpha = 0.05
 
 # Adam
 # beta1 = 0.8 
@@ -225,11 +223,10 @@ def training(max_iter):
         # solve the gradient
         mean_loss, total_gradients = calculate_cost_function(H_hat)
         print("loss: "+str(mean_loss))
-        if np.abs(last_loss-mean_loss) < 1e-4:
+        if np.abs(last_loss-mean_loss) < 1e-4  and mean_loss < 1:
             return H_hat, mean_loss
         else:
             last_loss = mean_loss
-
         # update H_hat
         momentum = (1-beta1)*total_gradients + beta1*momentum
         H_hat -= alpha * momentum
@@ -243,7 +240,7 @@ def training(max_iter):
         # print("v:"+str(np.sqrt(v_hat)))
         # H_hat -= alpha * m_hat / (np.sqrt(v_hat)+episilon) # update H_hat
         # print(H_hat)
-    return H_hat, mean_loss
+    return training(max_iter)
 
 
 # testing QNN for detection
@@ -307,13 +304,15 @@ for ii in range(len(SNR_list)):
     SD_performance_estimated = np.zeros(iter_num)
     QNN_performance_128 = np.zeros(iter_num)
 
+    alpha = 0.005*SNR
+
     for jj in range(iter_num):
         print("----------------------------current SNR_dB: " +str(SNR_dB))
         print("----------------------------current iter num: " +str(jj))
 
         H = H_list[jj] * np.sqrt(SNR)
-        cov = cov_list[0]
-        # cov = np.eye(Nr)
+        # cov = cov_list[0]
+        cov = np.eye(Nr)
 
         bits_sequence_testing, x_sequence_testing, y_sequence_testing = generate_data(Nr,Nt,1024,H,cov)
         bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,pilot_length,H,cov)
@@ -325,7 +324,7 @@ for ii in range(len(SNR_list)):
         # print("SD (perfect CSI): "+str(SD_performance[jj]))
 
 
-        SD_performance_estimated[jj] = sphere_decoding_BER(H_estimated, y_sequence_testing, bits_sequence_testing, 100000)
+        SD_performance_estimated[jj] = sphere_decoding_BER(H_estimated, y_sequence_testing, bits_sequence_testing, 10000)
         print("SD (estimated CSI): "+str(SD_performance_estimated[jj]))
 
         H_w = whiten_matrix(cov, H)
