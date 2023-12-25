@@ -19,7 +19,7 @@ channel_list = np.load("channel_list_4_2.npy")
 H_list = channel_list[0:iter_num]
 cov_list = np.load("covmatrix_list_4.npy")
 
-SNR_list = np.array([10])
+SNR_list = np.array([0,4,8,12,16])
 
 
 # Adam
@@ -33,8 +33,10 @@ pilot_length = 128
 
 beta1 = 0
 
-SD_mean_performance = np.zeros(len(SNR_list))
-SD_mean_performance_estimated = np.zeros(len(SNR_list))
+# SD_mean_performance = np.zeros(len(SNR_list))
+# SD_mean_performance_estimated = np.zeros(len(SNR_list))
+MAP_mean_performance = np.zeros(len(SNR_list))
+MaxLog_mean_performance = np.zeros(len(SNR_list))
 QNN_mean_performance_128 = np.zeros(len(SNR_list))
 
 save_loss = np.empty((len(SNR_list), iter_num))
@@ -223,8 +225,10 @@ def training(max_iter):
         # solve the gradient
         mean_loss, total_gradients = calculate_cost_function(H_hat)
         print("loss: "+str(mean_loss))
-        if np.abs(last_loss-mean_loss) < 1e-4  and mean_loss < 1:
+        if np.abs(last_loss-mean_loss) < 1e-4  and mean_loss < 1 and iter_num > 29:
             return H_hat, mean_loss
+        if np.abs(last_loss-mean_loss) < 1e-4  and mean_loss > 1:
+            return training(max_iter)
         else:
             last_loss = mean_loss
         # update H_hat
@@ -241,6 +245,7 @@ def training(max_iter):
         # H_hat -= alpha * m_hat / (np.sqrt(v_hat)+episilon) # update H_hat
         # print(H_hat)
     return training(max_iter)
+
 
 
 # testing QNN for detection
@@ -273,46 +278,91 @@ def calculate_layer2_testing(layer1_output):
     output = np.array([sum_prob_1[ii]/total_prob for ii in range(4*Nt)])
     return output
 
-def detection(y, H_trained):
+def detection_QNN(y, H_trained):
     layer1_output = calculate_layer1_testing(H_trained, y)
     layer2_output = calculate_layer2_testing(layer1_output)
-    detect_result = ''
+    QNN_detect_result = ''
     for ii in range(len(layer2_output)):
         if(layer2_output[ii]>0.5):
-            detect_result += '1'
+            QNN_detect_result += '1'
         else:
-            detect_result += '0'
-    return(detect_result)
+            QNN_detect_result += '0'
+    return QNN_detect_result
+
+
+def detection_MAP_MaxLog(H_estimated, y):
+    dimension_layer1 = 2**(4*Nt)
+    error_norm = np.empty(dimension_layer1)
+
+    min_error_norm_1 = np.ones(4*Nt)*10000
+    min_error_norm_0 = np.ones(4*Nt)*10000
+
+    for index in range(dimension_layer1):
+        bits = str(bin(index)[2:].zfill(4*Nt))
+        s = bits2signals(bits)
+        y = y.reshape(Nr,1)
+        error = y - np.dot(H_estimated, s)
+        error_norm_value = np.square(np.linalg.norm(error))
+        error_norm[index] = error_norm_value
+        for ii in range(4*Nt):
+            bit = bits[ii]
+            if bit == '1':
+                if error_norm_value<min_error_norm_1[ii]:
+                    min_error_norm_1[ii] = error_norm_value
+            if bit == '0':
+                if error_norm_value<min_error_norm_0[ii]:
+                    min_error_norm_0[ii] = error_norm_value
+    MaxLog_detect_result = ''
+    for ii in range(4*Nt):
+        if min_error_norm_0[ii] - min_error_norm_1[ii] > 0:
+            MaxLog_detect_result += '1'
+        else:
+            MaxLog_detect_result += '0'
+            
+    MAP_detect_result = str(bin(np.argmin(error_norm))[2:].zfill(4*Nt))
+    
+    return MaxLog_detect_result, MAP_detect_result
 
 def count_differences(str1, str2):
     return sum(a != b for a, b in zip(str1, str2))
 
-def calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing):
-    error = 0
+def calculate_BER(H_trained, H_estimated, bits_sequence_testing, y_sequence_testing):
+    error_QNN = 0
+    error_MAP = 0
+    error_MaxLog = 0
     for ii in range(len(y_sequence_testing[0])):
-        detect_result = detection(y_sequence_testing[:,ii], H_trained)
+        detect_result_QNN = detection_QNN(y_sequence_testing[:,ii], H_trained)
+        MaxLog_detect_result, MAP_detect_result = detection_MAP_MaxLog(H_estimated, y_sequence_testing[:,ii])
         true_sequence = ''.join(bits_sequence_testing[ii*Nt+jj] for jj in range(Nt))
-        error += count_differences(detect_result, true_sequence)
-    BER = error/(len(y_sequence_testing[0])*len(detect_result))
-    return BER
+        error_QNN += count_differences(detect_result_QNN, true_sequence)
+        error_MAP += count_differences(MAP_detect_result, true_sequence)
+        error_MaxLog += count_differences(MaxLog_detect_result, true_sequence)
+    BER_QNN = error_QNN/(len(y_sequence_testing[0])*len(detect_result_QNN))
+    BER_MAP = error_MAP/(len(y_sequence_testing[0])*len(MAP_detect_result))
+    BER_MaxLog = error_MaxLog/(len(y_sequence_testing[0])*len(MaxLog_detect_result))
+    
+    return BER_QNN, BER_MAP, BER_MaxLog
 
 for ii in range(len(SNR_list)):
     SNR_dB = SNR_list[ii]
     SNR = 10**(SNR_dB / 10)
     
-    SD_performance = np.zeros(iter_num)
-    SD_performance_estimated = np.zeros(iter_num)
+    # SD_performance = np.zeros(iter_num)
+    # SD_performance_estimated = np.zeros(iter_num)
+    MAP_performance = np.zeros(iter_num)
+    MaxLog_performance = np.zeros(iter_num)
     QNN_performance_128 = np.zeros(iter_num)
 
-    alpha = 0.005*SNR
+    alpha = 0.05
+    print("step: "+ str(alpha))
 
     for jj in range(iter_num):
         print("----------------------------current SNR_dB: " +str(SNR_dB))
         print("----------------------------current iter num: " +str(jj))
 
         H = H_list[jj] * np.sqrt(SNR)
-        # cov = cov_list[0]
-        cov = np.eye(Nr)
+        cov = cov_list[0]
+        # cov = np.eye(Nr)
 
         bits_sequence_testing, x_sequence_testing, y_sequence_testing = generate_data(Nr,Nt,1024,H,cov)
         bits_sequence, x_sequence, y_sequence = generate_data(Nr,Nt,pilot_length,H,cov)
@@ -324,15 +374,15 @@ for ii in range(len(SNR_list)):
         # print("SD (perfect CSI): "+str(SD_performance[jj]))
 
 
-        SD_performance_estimated[jj] = sphere_decoding_BER(H_estimated, y_sequence_testing, bits_sequence_testing, 10000)
-        print("SD (estimated CSI): "+str(SD_performance_estimated[jj]))
+        # SD_performance_estimated[jj] = sphere_decoding_BER(H_estimated, y_sequence_testing, bits_sequence_testing, 10000)
+        # print("SD (estimated CSI): "+str(SD_performance_estimated[jj]))
 
-        H_w = whiten_matrix(cov, H)
+        # H_w = whiten_matrix(cov, H)
         # print("白化信道")
         # print(H_w)
 
         H_trained, loss = training(max_iter)
-        BER = calculate_BER(H_trained, bits_sequence_testing, y_sequence_testing)
+        BER_QNN, BER_MAP, BER_MaxLog = calculate_BER(H_trained, H_estimated, bits_sequence_testing, y_sequence_testing)
 
         # print("真实信道")
         # print(H)
@@ -343,14 +393,20 @@ for ii in range(len(SNR_list)):
         
 
         # save_BER[ii][jj] = BER
+        MAP_performance[jj] = BER_MAP
+        print("MAP: "+str(BER_MAP))
 
-        QNN_performance_128[jj] = BER
-        print("QNN: "+str(BER))
+        MaxLog_performance[jj] = BER_MaxLog
+        print("MaxLog: "+str(BER_MaxLog))
+
+        QNN_performance_128[jj] = BER_QNN
+        print("QNN: "+str(BER_QNN))
 
     # SD_mean_performance[ii] = np.mean(SD_performance)
-    SD_mean_performance_estimated[ii] = np.mean(SD_performance_estimated)
+    # SD_mean_performance_estimated[ii] = np.mean(SD_performance_estimated)
+    MAP_mean_performance[ii] = np.mean(MAP_performance)
+    MaxLog_mean_performance[ii] = np.mean(MaxLog_performance)
     QNN_mean_performance_128[ii] = np.mean(QNN_performance_128)
-
 
 fig = plt.figure()
 plt.rcParams['font.family'] = 'sans-serif'
@@ -358,7 +414,7 @@ plt.rcParams['font.sans-serif'] = ['Times New Roman']
 
 ax1 = fig.add_subplot(111)
 
-lns1 = ax1.plot(SNR_list, SD_mean_performance_estimated, '-ro', linewidth=2.0, label="Max Log (estimated CSI)")
+lns1 = ax1.plot(SNR_list, MaxLog_mean_performance, '-ro', linewidth=2.0, label="Max Log (estimated CSI)")
 lns2 = ax1.plot(SNR_list, QNN_mean_performance_128, '-bo', linewidth=2.0, label="QNN Decoding (128 pilot)")
 
 
